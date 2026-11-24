@@ -75,7 +75,8 @@ final class Recorder: NSObject, ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.player.seek(to: .zero) }
         }
-        loadLatestRecording()
+        // "--empty" starts without the last recording loaded.
+        if !CommandLine.arguments.contains("--empty") { loadLatestRecording() }
     }
 
     /// Makes Play work straight after launch, on the most recent recording.
@@ -438,7 +439,7 @@ struct ContentView: View {
             Divider()
             controls
         }
-        .frame(width: 640)
+        .frame(width: 700)
     }
 
     private var screen: some View {
@@ -467,7 +468,7 @@ struct ContentView: View {
                     .foregroundStyle(.white.opacity(0.6))
             }
         }
-        .frame(height: 360)
+        .frame(height: 394)
     }
 
     private var controls: some View {
