@@ -6,6 +6,8 @@
 
 A small macOS screen recorder. Pick a window, a screen or an area, press Record, and get an MP4.
 
+By [Nader](https://nader.io).
+
 <p align="center">
   <img src="assets/screenshot.png" width="768" height="590" alt="The Screencorder window: a preview area above the source buttons, Record, Stop and Play, New and Show in Finder">
 </p>
