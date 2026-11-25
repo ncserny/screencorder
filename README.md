@@ -30,7 +30,7 @@ macOS 15.2 or later, on Apple silicon or Intel.
 
 ## Install
 
-1. Download `Screencorder-1.1.zip` from the [latest release](https://github.com/ncserny/screencorder/releases/latest) and unzip it.
+1. Download `Screencorder-1.2.zip` from the [latest release](https://github.com/ncserny/screencorder/releases/latest) and unzip it.
 2. Move `Screencorder.app` to your Applications folder.
 3. Open it. The app is not notarised by Apple, so macOS blocks the first launch. Go to System Settings, Privacy & Security, scroll down and click **Open Anyway**.
 
