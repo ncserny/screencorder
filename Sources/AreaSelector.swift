@@ -43,11 +43,20 @@ final class AreaSelector {
     // MARK: Highlight
 
     private var highlight: NSWindow?
+    private var highlightView: HighlightView?
+    private var highlightScreen: NSScreen?
+    private var handle: NSWindow?
+    private var onMove: ((CGRect) -> Void)?
+    private var movable = true
+
+    private static let handleSize = CGSize(width: 112, height: 26)
 
     /// Keeps the chosen area clear and dims the rest of that screen. Clicks
     /// pass straight through, and the recording does not include it because
-    /// this app's windows are left out of the capture.
-    func showHighlight(screen: NSScreen, rect: CGRect) {
+    /// this app's windows are left out of the capture. A small handle on the
+    /// area's edge drags it somewhere else: `onMove` gets the new rectangle,
+    /// in the screen's points from its top-left corner.
+    func showHighlight(screen: NSScreen, rect: CGRect, onMove: ((CGRect) -> Void)? = nil) {
         hideHighlight()
         let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless,
                                    backing: .buffered, defer: false)
@@ -66,6 +75,11 @@ final class AreaSelector {
         window.contentView = view
         window.orderFrontRegardless()
         highlight = window
+        highlightView = view
+        highlightScreen = screen
+        self.onMove = onMove
+
+        if onMove != nil { showHandle() }
 
         // Keep the recorder's own window above the dimming, so it stays readable.
         for other in NSApp.windows where !(other is OverlayWindow) && other.canBecomeMain {
@@ -74,12 +88,82 @@ final class AreaSelector {
     }
 
     func hideHighlight() {
+        handle?.orderOut(nil)
+        handle = nil
+        onMove = nil
+        highlightView = nil
+        highlightScreen = nil
         guard let highlight else { return }
         highlight.orderOut(nil)
         self.highlight = nil
         for other in NSApp.windows where !(other is OverlayWindow) && other.canBecomeMain {
             other.level = .normal
         }
+    }
+
+    /// Takes everything this class has put on the screen away again.
+    func hideEverything() {
+        close()
+        hideHighlight()
+    }
+
+    /// The area stays where it is while a recording runs.
+    func setMovable(_ movable: Bool) {
+        self.movable = movable
+        guard let handle else { return }
+        if movable { handle.orderFrontRegardless() } else { handle.orderOut(nil) }
+    }
+
+    private func showHandle() {
+        let window = OverlayWindow(contentRect: CGRect(origin: .zero, size: Self.handleSize),
+                                   styleMask: .borderless, backing: .buffered, defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.level = .floating
+        window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+
+        let view = MoveHandleView(frame: CGRect(origin: .zero, size: Self.handleSize))
+        var startHole = CGRect.zero
+        view.onBegin = { [weak self] in startHole = self?.highlightView?.hole ?? .zero }
+        view.onDrag = { [weak self] delta in self?.moveHole(from: startHole, by: delta) }
+        view.onEnd = { [weak self] in self?.reportMove() }
+        window.contentView = view
+        handle = window
+        placeHandle()
+        if movable { window.orderFrontRegardless() }
+    }
+
+    private func moveHole(from startHole: CGRect, by delta: CGSize) {
+        guard let view = highlightView else { return }
+        var hole = startHole
+        hole.origin.x = min(max(0, (startHole.minX + delta.width).rounded()),
+                            view.bounds.width - hole.width)
+        hole.origin.y = min(max(0, (startHole.minY + delta.height).rounded()),
+                            view.bounds.height - hole.height)
+        view.hole = hole
+        view.needsDisplay = true
+        placeHandle()
+    }
+
+    private func reportMove() {
+        guard let view = highlightView else { return }
+        let hole = view.hole
+        onMove?(CGRect(x: hole.minX, y: view.bounds.height - hole.maxY,
+                       width: hole.width, height: hole.height))
+    }
+
+    /// The handle sits just above the area's top-left corner, or just inside
+    /// it when the area reaches the top of the screen.
+    private func placeHandle() {
+        guard let handle, let view = highlightView, let screen = highlightScreen else { return }
+        let hole = view.hole
+        let size = Self.handleSize
+        let x = min(max(0, hole.minX), view.bounds.width - size.width)
+        var y = hole.maxY + 6
+        if y + size.height > view.bounds.height { y = hole.maxY - size.height - 6 }
+        handle.setFrameOrigin(CGPoint(x: screen.frame.minX + x, y: screen.frame.minY + y))
     }
 
     private func finish(screen: NSScreen, rect: CGRect?) {
@@ -118,6 +202,65 @@ private final class HighlightView: NSView {
     }
 }
 
+/// The small pill that drags the chosen area to another place.
+private final class MoveHandleView: NSView {
+    var onBegin: (() -> Void)?
+    var onDrag: ((CGSize) -> Void)?
+    var onEnd: (() -> Void)?
+
+    private var startMouse: CGPoint?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: startMouse == nil ? .openHand : .closedHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        startMouse = NSEvent.mouseLocation
+        onBegin?()
+        NSCursor.closedHand.push()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let startMouse else { return }
+        let now = NSEvent.mouseLocation
+        onDrag?(CGSize(width: now.x - startMouse.x, height: now.y - startMouse.y))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard startMouse != nil else { return }
+        startMouse = nil
+        NSCursor.pop()
+        onEnd?()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.withAlphaComponent(0.8).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2,
+                     yRadius: bounds.height / 2).fill()
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let string = NSAttributedString(string: "Move area", attributes: attributes)
+        let textSize = string.size()
+        let symbol = NSImage(systemSymbolName: "arrow.up.and.down.and.arrow.left.and.right",
+                             accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(paletteColors: [.white]))
+        let iconSide: CGFloat = symbol == nil ? 0 : 13
+        let gap: CGFloat = symbol == nil ? 0 : 6
+        var x = (bounds.width - iconSide - gap - textSize.width) / 2
+        if let symbol {
+            symbol.draw(in: CGRect(x: x, y: (bounds.height - iconSide) / 2,
+                                   width: iconSide, height: iconSide))
+            x += iconSide + gap
+        }
+        string.draw(at: CGPoint(x: x, y: (bounds.height - textSize.height) / 2))
+    }
+}
+
 private final class SelectionView: NSView {
     /// Called with the rectangle (top-left origin), or nil on cancel.
     var onFinish: ((CGRect?) -> Void)?
@@ -127,6 +270,14 @@ private final class SelectionView: NSView {
     private var start: CGPoint?
     private var selection: CGRect?
     private var shiftAspect: CGFloat?
+    private var lastPoint: CGPoint?
+    private var spaceDown = false
+
+    /// Space is read both from key events and from the keyboard itself, so a
+    /// press that never reached this view still counts.
+    private var movingWithSpace: Bool {
+        spaceDown || CGEventSource.keyState(.combinedSessionState, key: 49)
+    }
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -137,6 +288,7 @@ private final class SelectionView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         start = convert(event.locationInWindow, from: nil)
+        lastPoint = start
         selection = nil
         needsDisplay = true
     }
@@ -144,6 +296,18 @@ private final class SelectionView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let start else { return }
         let point = convert(event.locationInWindow, from: nil)
+        defer { lastPoint = point }
+        // Holding Space moves the rectangle instead of resizing it.
+        if movingWithSpace, let last = lastPoint, let current = selection {
+            let dx = min(max(point.x - last.x, bounds.minX - current.minX),
+                         bounds.maxX - current.maxX)
+            let dy = min(max(point.y - last.y, bounds.minY - current.minY),
+                         bounds.maxY - current.maxY)
+            selection = current.offsetBy(dx: dx, dy: dy)
+            self.start = CGPoint(x: start.x + dx, y: start.y + dy)
+            needsDisplay = true
+            return
+        }
         updateShiftLock(event)
         if let aspect = aspect ?? shiftAspect {
             // Grow from the starting corner towards the pointer, keeping the
@@ -183,7 +347,7 @@ private final class SelectionView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { start = nil; shiftAspect = nil }
+        defer { start = nil; shiftAspect = nil; lastPoint = nil }
         guard let selection, selection.width >= 16, selection.height >= 16 else {
             // A click or a sliver is not a selection: let the user try again.
             self.selection = nil
@@ -197,7 +361,15 @@ private final class SelectionView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { onFinish?(nil) } else { super.keyDown(with: event) }
+        switch event.keyCode {
+        case 53: onFinish?(nil)
+        case 49: spaceDown = true
+        default: super.keyDown(with: event)
+        }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if event.keyCode == 49 { spaceDown = false } else { super.keyUp(with: event) }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -208,6 +380,8 @@ private final class SelectionView: NSView {
             let shape = aspectName.map { "a \($0) area" } ?? "the area"
             drawLabel("Drag to choose \(shape) to record. Esc cancels.",
                       centeredAt: CGPoint(x: bounds.midX, y: bounds.midY), size: 18)
+            drawLabel("Hold Space while dragging to move it.",
+                      centeredAt: CGPoint(x: bounds.midX, y: bounds.midY - 40), size: 13)
             return
         }
 

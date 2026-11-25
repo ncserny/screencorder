@@ -19,6 +19,28 @@ struct ScreenRecorderApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var closeObserver: NSObjectProtocol?
+
+    // Closing the recorder window quits the app. The dimming around a chosen
+    // area is a window too, so without this it would stay up, keep the app
+    // running and leave no window to get back to.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main
+        ) { note in
+            guard let window = note.object as? NSWindow, window.canBecomeMain,
+                  window.styleMask.contains(.titled), !(window is NSPanel) else { return }
+            MainActor.assumeIsolated {
+                AreaSelector.shared.hideEverything()
+            }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { AreaSelector.shared.hideEverything() }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     // Quitting mid-recording would leave an unplayable file, so finish it first.
@@ -63,6 +85,7 @@ final class Recorder: NSObject, ObservableObject {
     private let frameSink = FrameSink()
     private let frameQueue = DispatchQueue(label: "screen-recorder.frames")
     private var endObserver: NSObjectProtocol?
+    private var stateObserver: AnyCancellable?
 
     override init() {
         super.init()
@@ -77,6 +100,10 @@ final class Recorder: NSObject, ObservableObject {
         }
         // "--empty" starts without the last recording loaded.
         if !CommandLine.arguments.contains("--empty") { loadLatestRecording() }
+        // The area cannot be moved while it is being recorded.
+        stateObserver = $state.receive(on: RunLoop.main).sink { state in
+            MainActor.assumeIsolated { AreaSelector.shared.setMovable(state == .idle) }
+        }
     }
 
     /// Makes Play work straight after launch, on the most recent recording.
@@ -134,7 +161,11 @@ final class Recorder: NSObject, ObservableObject {
                                      exceptingWindows: [])
             area = rect
             hasSource = true
-            AreaSelector.shared.showHighlight(screen: screen, rect: rect)
+            AreaSelector.shared.showHighlight(screen: screen, rect: rect) { [weak self] moved in
+                guard let self, self.state == .idle else { return }
+                self.area = moved
+                self.message = "Area moved. Press Record."
+            }
             let pixelWidth = rect.width * screen.backingScaleFactor
             outputSize = shape.outputSize(pixelWidth: pixelWidth)
             sourceName = "\(shape.ratioName ?? "Area") \(Int(rect.width)) × \(Int(rect.height))"

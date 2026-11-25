@@ -15,7 +15,8 @@ By [Nader](https://nader.io).
 ## Features
 
 - **Record a window or a whole screen**, chosen with the macOS picker.
-- **Record an area**: draw a rectangle on the screen. Hold Shift while dragging to keep its proportions.
+- **Record an area**: draw a rectangle on the screen. Hold Shift while dragging to keep its proportions, or Space to move it.
+- **Move the area**: once it is chosen, drag its **Move area** handle to put it somewhere else, instead of rearranging your windows to fit it.
 - **YouTube shapes**: draw an area locked to 16:9 (saved as 1080p, 1440p or 4K) or to 9:16 for Shorts (saved as 1080 × 1920).
 - **See what is being recorded**: once an area is chosen, the rest of the screen is dimmed. The dimming is not part of the video, and clicks pass through it.
 - **Record, Stop and Play** buttons, with playback of the last recording in the window.
@@ -29,7 +30,7 @@ macOS 15.2 or later, on Apple silicon or Intel.
 
 ## Install
 
-1. Download `Screencorder-1.0.zip` from the [latest release](https://github.com/ncserny/screencorder/releases/latest) and unzip it.
+1. Download `Screencorder-1.1.zip` from the [latest release](https://github.com/ncserny/screencorder/releases/latest) and unzip it.
 2. Move `Screencorder.app` to your Applications folder.
 3. Open it. The app is not notarised by Apple, so macOS blocks the first launch. Go to System Settings, Privacy & Security, scroll down and click **Open Anyway**.
 
@@ -39,9 +40,11 @@ macOS 15.2 or later, on Apple silicon or Intel.
 2. Press **Stop**. The MP4 is saved and loaded into the window.
 3. Press **Play** to watch it, or **Show in Finder** to get the file.
 
-To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. Then press Record.
+To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. To reposition the area afterwards, drag the **Move area** handle at its top-left corner. Then press Record. The area stays put while a recording runs.
 
 **New** clears the last recording from the window. The file stays on disk.
+
+Closing the window quits Screencorder and takes the dimming away. A recording that is still running is finished and saved first.
 
 ### Screen Recording permission
 
