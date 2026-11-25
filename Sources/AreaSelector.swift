@@ -7,15 +7,19 @@ final class AreaSelector {
 
     private var windows: [NSWindow] = []
     private var onDone: ((NSScreen, CGRect) -> Void)?
+    private var onCancel: (() -> Void)?
 
     /// `onDone` gets the screen and the rectangle in that screen's points,
-    /// measured from its top-left corner. It is not called if the user cancels.
-    /// `aspect` (width over height) locks the rectangle to that shape.
+    /// measured from its top-left corner. If the user cancels, `onCancel` is
+    /// called instead. `aspect` (width over height) locks the rectangle to
+    /// that shape.
     func begin(aspect: CGFloat? = nil, aspectName: String? = nil,
+               onCancel: (() -> Void)? = nil,
                onDone: @escaping (NSScreen, CGRect) -> Void) {
         close()
         hideHighlight()
         self.onDone = onDone
+        self.onCancel = onCancel
 
         for screen in NSScreen.screens {
             let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless,
@@ -48,6 +52,8 @@ final class AreaSelector {
     private var handle: NSWindow?
     private var grips: [(window: NSWindow, x: Int, y: Int)] = []
     private var highlightAspect: CGFloat?
+    private var onClear: (() -> Void)?
+    private var escapeMonitor: Any?
     private var onMove: ((CGRect) -> Void)?
     private var movable = true
 
@@ -62,8 +68,9 @@ final class AreaSelector {
     /// `onMove` gets the new rectangle, in the screen's points from its
     /// top-left corner. `aspect` (width over height) keeps the shape while
     /// resizing.
+    /// Esc, pressed while this app is in front, calls `onClear`.
     func showHighlight(screen: NSScreen, rect: CGRect, aspect: CGFloat? = nil,
-                       onMove: ((CGRect) -> Void)? = nil) {
+                       onMove: ((CGRect) -> Void)? = nil, onClear: (() -> Void)? = nil) {
         hideHighlight()
         let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless,
                                    backing: .buffered, defer: false)
@@ -86,6 +93,20 @@ final class AreaSelector {
         highlightScreen = screen
         self.onMove = onMove
         highlightAspect = aspect
+        self.onClear = onClear
+        if onClear != nil {
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == 53 else { return event }
+                let handled = MainActor.assumeIsolated { () -> Bool in
+                    // While drawing, or during a recording, Esc is not ours.
+                    guard let self, self.windows.isEmpty, self.movable,
+                          let clear = self.onClear else { return false }
+                    clear()
+                    return true
+                }
+                return handled ? nil : event
+            }
+        }
 
         if onMove != nil {
             showHandle()
@@ -103,6 +124,9 @@ final class AreaSelector {
         handle = nil
         grips.forEach { $0.window.orderOut(nil) }
         grips.removeAll()
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        escapeMonitor = nil
+        onClear = nil
         onMove = nil
         highlightView = nil
         highlightScreen = nil
@@ -265,14 +289,16 @@ final class AreaSelector {
 
     private func finish(screen: NSScreen, rect: CGRect?) {
         let done = onDone
+        let cancel = onCancel
         close()
-        if let rect { done?(screen, rect) }
+        if let rect { done?(screen, rect) } else { cancel?() }
     }
 
     private func close() {
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         onDone = nil
+        onCancel = nil
     }
 }
 

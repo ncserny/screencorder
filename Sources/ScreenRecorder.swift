@@ -146,7 +146,9 @@ final class Recorder: NSObject, ObservableObject {
     /// Lets the user draw a rectangle on a screen and records just that part.
     func chooseArea(_ shape: AreaShape = .free) {
         guard state == .idle else { return }
-        AreaSelector.shared.begin(aspect: shape.aspect, aspectName: shape.ratioName) {
+        // Esc while drawing drops the area that was there before, too.
+        AreaSelector.shared.begin(aspect: shape.aspect, aspectName: shape.ratioName,
+                                  onCancel: { [weak self] in self?.clearArea() }) {
             [weak self] screen, rect in
             Task { await self?.setArea(screen: screen, rect: rect, shape: shape) }
         }
@@ -169,16 +171,30 @@ final class Recorder: NSObject, ObservableObject {
                                      exceptingWindows: [])
             hasSource = true
             applyArea(rect, on: screen, shape: shape, verb: "chosen")
-            AreaSelector.shared.showHighlight(screen: screen, rect: rect, aspect: shape.aspect) {
-                [weak self] changed in
-                guard let self, self.state == .idle else { return }
-                self.applyArea(changed, on: screen, shape: shape, verb: "changed")
-            }
+            AreaSelector.shared.showHighlight(
+                screen: screen, rect: rect, aspect: shape.aspect,
+                onMove: { [weak self] changed in
+                    guard let self, self.state == .idle else { return }
+                    self.applyArea(changed, on: screen, shape: shape, verb: "changed")
+                },
+                onClear: { [weak self] in self?.clearArea() })
         } catch {
             message = "Recording an area needs the Screen Recording permission. Allow "
                 + "Screencorder under System Settings, Privacy & Security, "
                 + "Screen & System Audio Recording, then choose the area again."
         }
+    }
+
+    /// Forgets the chosen area and takes its dimming off the screen.
+    func clearArea() {
+        guard state == .idle, area != nil else { return }
+        area = nil
+        outputSize = nil
+        filter = nil
+        hasSource = false
+        sourceName = "No source chosen yet"
+        message = nil
+        AreaSelector.shared.hideHighlight()
     }
 
     /// Takes a drawn, moved or resized area as the thing to record.
@@ -187,10 +203,10 @@ final class Recorder: NSObject, ObservableObject {
         outputSize = shape.outputSize(pixelWidth: rect.width * screen.backingScaleFactor)
         sourceName = "\(shape.ratioName ?? "Area") \(Int(rect.width)) × \(Int(rect.height))"
         if let outputSize {
-            message = "Area \(verb). Press Record. The video will be "
+            message = "Area \(verb). Press Record, or Esc to remove it. The video will be "
                 + "\(outputSize.width) × \(outputSize.height)."
         } else {
-            message = "Area \(verb). Press Record."
+            message = "Area \(verb). Press Record, or Esc to remove it."
         }
     }
 

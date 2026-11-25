@@ -40,7 +40,7 @@ macOS 15.2 or later, on Apple silicon or Intel.
 2. Press **Stop**. The MP4 is saved and loaded into the window.
 3. Press **Play** to watch it, or **Show in Finder** to get the file.
 
-To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. To reposition the area afterwards, drag the **Move area** handle at its top-left corner. To resize it, drag one of the squares on its corners and sides. Then press Record. The area stays put while a recording runs.
+To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. To reposition the area afterwards, drag the **Move area** handle at its top-left corner. To resize it, drag one of the squares on its corners and sides. Esc removes the area again, with its dimming, while Screencorder is the app in front. Then press Record. The area stays put while a recording runs.
 
 **New** clears the last recording from the window, as do the N key and Command-N. The file stays on disk.
 
