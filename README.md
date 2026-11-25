@@ -42,7 +42,7 @@ macOS 15.2 or later, on Apple silicon or Intel.
 
 To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. To reposition the area afterwards, drag the **Move area** handle at its top-left corner. Then press Record. The area stays put while a recording runs.
 
-**New** clears the last recording from the window. The file stays on disk.
+**New** clears the last recording from the window, as do the N key and Command-N. The file stays on disk.
 
 Closing the window quits Screencorder and takes the dimming away. A recording that is still running is finished and saved first.
 

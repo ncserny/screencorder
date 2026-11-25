@@ -15,6 +15,14 @@ struct ScreenRecorderApp: App {
             ContentView(recorder: recorder)
         }
         .windowResizability(.contentSize)
+        .commands {
+            // Command-N starts an empty recording instead of opening a window.
+            CommandGroup(replacing: .newItem) {
+                Button("New Recording") { recorder.newRecording() }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .disabled(recorder.state != .idle || recorder.lastURL == nil)
+            }
+        }
     }
 }
 
@@ -549,7 +557,15 @@ struct ContentView: View {
                         Label("New", systemImage: "plus")
                     }
                     .disabled(recorder.state != .idle || recorder.lastURL == nil)
-                    .help("Clear the last recording and start with an empty one")
+                    .help("Clear the last recording and start with an empty one (N or Command-N)")
+                    // A plain N does the same as Command-N.
+                    .background {
+                        Button("") { recorder.newRecording() }
+                            .keyboardShortcut("n", modifiers: [])
+                            .disabled(recorder.state != .idle || recorder.lastURL == nil)
+                            .opacity(0)
+                            .accessibilityHidden(true)
+                    }
 
                     Button("Show in Finder") { recorder.revealInFinder() }
                         .disabled(recorder.lastURL == nil)
