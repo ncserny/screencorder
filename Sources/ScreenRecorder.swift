@@ -167,26 +167,30 @@ final class Recorder: NSObject, ObservableObject {
             let own = content.applications.filter { $0.processID == pid }
             filter = SCContentFilter(display: display, excludingApplications: own,
                                      exceptingWindows: [])
-            area = rect
             hasSource = true
-            AreaSelector.shared.showHighlight(screen: screen, rect: rect) { [weak self] moved in
+            applyArea(rect, on: screen, shape: shape, verb: "chosen")
+            AreaSelector.shared.showHighlight(screen: screen, rect: rect, aspect: shape.aspect) {
+                [weak self] changed in
                 guard let self, self.state == .idle else { return }
-                self.area = moved
-                self.message = "Area moved. Press Record."
-            }
-            let pixelWidth = rect.width * screen.backingScaleFactor
-            outputSize = shape.outputSize(pixelWidth: pixelWidth)
-            sourceName = "\(shape.ratioName ?? "Area") \(Int(rect.width)) × \(Int(rect.height))"
-            if let outputSize {
-                message = "Area chosen. Press Record. The video will be "
-                    + "\(outputSize.width) × \(outputSize.height)."
-            } else {
-                message = "Area chosen. Press Record."
+                self.applyArea(changed, on: screen, shape: shape, verb: "changed")
             }
         } catch {
             message = "Recording an area needs the Screen Recording permission. Allow "
                 + "Screencorder under System Settings, Privacy & Security, "
                 + "Screen & System Audio Recording, then choose the area again."
+        }
+    }
+
+    /// Takes a drawn, moved or resized area as the thing to record.
+    private func applyArea(_ rect: CGRect, on screen: NSScreen, shape: AreaShape, verb: String) {
+        area = rect
+        outputSize = shape.outputSize(pixelWidth: rect.width * screen.backingScaleFactor)
+        sourceName = "\(shape.ratioName ?? "Area") \(Int(rect.width)) × \(Int(rect.height))"
+        if let outputSize {
+            message = "Area \(verb). Press Record. The video will be "
+                + "\(outputSize.width) × \(outputSize.height)."
+        } else {
+            message = "Area \(verb). Press Record."
         }
     }
 

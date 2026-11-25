@@ -16,7 +16,7 @@ By [Nader](https://nader.io).
 
 - **Record a window or a whole screen**, chosen with the macOS picker.
 - **Record an area**: draw a rectangle on the screen. Hold Shift while dragging to keep its proportions, or Space to move it.
-- **Move the area**: once it is chosen, drag its **Move area** handle to put it somewhere else, instead of rearranging your windows to fit it.
+- **Move and resize the area**: once it is chosen, drag its **Move area** handle to put it somewhere else, or drag the squares on its border to resize it, instead of rearranging your windows to fit it. A YouTube area keeps its shape.
 - **YouTube shapes**: draw an area locked to 16:9 (saved as 1080p, 1440p or 4K) or to 9:16 for Shorts (saved as 1080 × 1920).
 - **See what is being recorded**: once an area is chosen, the rest of the screen is dimmed. The dimming is not part of the video, and clicks pass through it.
 - **Record, Stop and Play** buttons, with playback of the last recording in the window.
@@ -40,7 +40,7 @@ macOS 15.2 or later, on Apple silicon or Intel.
 2. Press **Stop**. The MP4 is saved and loaded into the window.
 3. Press **Play** to watch it, or **Show in Finder** to get the file.
 
-To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. To reposition the area afterwards, drag the **Move area** handle at its top-left corner. Then press Record. The area stays put while a recording runs.
+To record an area, click the dashed-rectangle button, choose a shape, and drag on the screen. Esc cancels. To reposition the area afterwards, drag the **Move area** handle at its top-left corner. To resize it, drag one of the squares on its corners and sides. Then press Record. The area stays put while a recording runs.
 
 **New** clears the last recording from the window, as do the N key and Command-N. The file stays on disk.
 

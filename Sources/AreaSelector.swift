@@ -46,17 +46,24 @@ final class AreaSelector {
     private var highlightView: HighlightView?
     private var highlightScreen: NSScreen?
     private var handle: NSWindow?
+    private var grips: [(window: NSWindow, x: Int, y: Int)] = []
+    private var highlightAspect: CGFloat?
     private var onMove: ((CGRect) -> Void)?
     private var movable = true
 
     private static let handleSize = CGSize(width: 112, height: 26)
+    private static let gripSize: CGFloat = 16
+    private static let minimumSide: CGFloat = 32
 
     /// Keeps the chosen area clear and dims the rest of that screen. Clicks
     /// pass straight through, and the recording does not include it because
     /// this app's windows are left out of the capture. A small handle on the
-    /// area's edge drags it somewhere else: `onMove` gets the new rectangle,
-    /// in the screen's points from its top-left corner.
-    func showHighlight(screen: NSScreen, rect: CGRect, onMove: ((CGRect) -> Void)? = nil) {
+    /// area's edge drags it somewhere else and grips on its border resize it:
+    /// `onMove` gets the new rectangle, in the screen's points from its
+    /// top-left corner. `aspect` (width over height) keeps the shape while
+    /// resizing.
+    func showHighlight(screen: NSScreen, rect: CGRect, aspect: CGFloat? = nil,
+                       onMove: ((CGRect) -> Void)? = nil) {
         hideHighlight()
         let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless,
                                    backing: .buffered, defer: false)
@@ -78,8 +85,12 @@ final class AreaSelector {
         highlightView = view
         highlightScreen = screen
         self.onMove = onMove
+        highlightAspect = aspect
 
-        if onMove != nil { showHandle() }
+        if onMove != nil {
+            showHandle()
+            showGrips()
+        }
 
         // Keep the recorder's own window above the dimming, so it stays readable.
         for other in NSApp.windows where !(other is OverlayWindow) && other.canBecomeMain {
@@ -90,6 +101,8 @@ final class AreaSelector {
     func hideHighlight() {
         handle?.orderOut(nil)
         handle = nil
+        grips.forEach { $0.window.orderOut(nil) }
+        grips.removeAll()
         onMove = nil
         highlightView = nil
         highlightScreen = nil
@@ -110,20 +123,94 @@ final class AreaSelector {
     /// The area stays where it is while a recording runs.
     func setMovable(_ movable: Bool) {
         self.movable = movable
-        guard let handle else { return }
-        if movable { handle.orderFrontRegardless() } else { handle.orderOut(nil) }
+        for window in [handle].compactMap({ $0 }) + grips.map(\.window) {
+            if movable { window.orderFrontRegardless() } else { window.orderOut(nil) }
+        }
     }
 
-    private func showHandle() {
-        let window = OverlayWindow(contentRect: CGRect(origin: .zero, size: Self.handleSize),
+    private func overlayPiece(size: CGSize, shadow: Bool) -> NSWindow {
+        let window = OverlayWindow(contentRect: CGRect(origin: .zero, size: size),
                                    styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.hasShadow = true
+        window.hasShadow = shadow
         window.level = .floating
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        return window
+    }
 
+    /// A grip on each corner, and on each side too unless the shape is fixed.
+    private func showGrips() {
+        let side = Self.gripSize
+        for y in [-1, 0, 1] {
+            for x in [-1, 0, 1] where !(x == 0 && y == 0) {
+                if highlightAspect != nil && (x == 0 || y == 0) { continue }
+                let window = overlayPiece(size: CGSize(width: side, height: side), shadow: false)
+                let view = ResizeGripView(frame: CGRect(x: 0, y: 0, width: side, height: side))
+                view.cursor = Self.cursor(x: x, y: y)
+                var startHole = CGRect.zero
+                view.onBegin = { [weak self] in startHole = self?.highlightView?.hole ?? .zero }
+                view.onDrag = { [weak self] delta in
+                    self?.resizeHole(from: startHole, by: delta, x: x, y: y)
+                }
+                view.onEnd = { [weak self] in self?.reportMove() }
+                window.contentView = view
+                grips.append((window, x, y))
+            }
+        }
+        placeHandle()
+        if movable { grips.forEach { $0.window.orderFrontRegardless() } }
+    }
+
+    private static func cursor(x: Int, y: Int) -> NSCursor {
+        if x == 0 { return .resizeUpDown }
+        if y == 0 { return .resizeLeftRight }
+        let position: NSCursor.FrameResizePosition
+        switch (x, y) {
+        case (-1, 1): position = .topLeft
+        case (1, 1): position = .topRight
+        case (-1, -1): position = .bottomLeft
+        default: position = .bottomRight
+        }
+        return NSCursor.frameResize(position: position, directions: .all)
+    }
+
+    /// `x` and `y` say which sides the grip moves: -1 the left or bottom one,
+    /// 1 the right or top one, 0 neither. The opposite side stays where it is.
+    private func resizeHole(from start: CGRect, by delta: CGSize, x: Int, y: Int) {
+        guard let view = highlightView else { return }
+        let bounds = view.bounds
+        let least = Self.minimumSide
+        var minX = start.minX, maxX = start.maxX, minY = start.minY, maxY = start.maxY
+
+        if let aspect = highlightAspect {
+            // Grow or shrink from the opposite corner, keeping the shape.
+            let wantedWidth = x == 1 ? start.width + delta.width : start.width - delta.width
+            let wantedHeight = y == 1 ? start.height + delta.height : start.height - delta.height
+            let roomX = x == 1 ? bounds.maxX - start.minX : start.maxX - bounds.minX
+            let roomY = y == 1 ? bounds.maxY - start.minY : start.maxY - bounds.minY
+            var width = max(wantedWidth, wantedHeight * aspect)
+            width = min(width, roomX, roomY * aspect)
+            width = max(width, least, least * aspect)
+            let height = width / aspect
+            if x == 1 { maxX = minX + width } else { minX = maxX - width }
+            if y == 1 { maxY = minY + height } else { minY = maxY - height }
+        } else {
+            if x == -1 { minX = min(max(bounds.minX, start.minX + delta.width), maxX - least) }
+            if x == 1 { maxX = max(min(bounds.maxX, start.maxX + delta.width), minX + least) }
+            if y == -1 { minY = min(max(bounds.minY, start.minY + delta.height), maxY - least) }
+            if y == 1 { maxY = max(min(bounds.maxY, start.maxY + delta.height), minY + least) }
+        }
+
+        view.hole = CGRect(x: minX.rounded(), y: minY.rounded(),
+                           width: (maxX - minX).rounded(), height: (maxY - minY).rounded())
+        view.needsDisplay = true
+        placeHandle()
+    }
+
+    private func showHandle() {
+        let window = overlayPiece(size: Self.handleSize, shadow: true)
         let view = MoveHandleView(frame: CGRect(origin: .zero, size: Self.handleSize))
         var startHole = CGRect.zero
         view.onBegin = { [weak self] in startHole = self?.highlightView?.hole ?? .zero }
@@ -157,13 +244,23 @@ final class AreaSelector {
     /// The handle sits just above the area's top-left corner, or just inside
     /// it when the area reaches the top of the screen.
     private func placeHandle() {
-        guard let handle, let view = highlightView, let screen = highlightScreen else { return }
+        guard let view = highlightView, let screen = highlightScreen else { return }
         let hole = view.hole
         let size = Self.handleSize
-        let x = min(max(0, hole.minX), view.bounds.width - size.width)
-        var y = hole.maxY + 6
-        if y + size.height > view.bounds.height { y = hole.maxY - size.height - 6 }
-        handle.setFrameOrigin(CGPoint(x: screen.frame.minX + x, y: screen.frame.minY + y))
+        // Clear of the corner grip, which sticks out above the area.
+        let x = min(max(0, hole.minX + 14), view.bounds.width - size.width)
+        var y = hole.maxY + 12
+        if y + size.height > view.bounds.height { y = hole.maxY - size.height - 12 }
+        handle?.setFrameOrigin(CGPoint(x: screen.frame.minX + x, y: screen.frame.minY + y))
+
+        // Each grip is centred on its corner or on the middle of its side.
+        let half = Self.gripSize / 2
+        for grip in grips {
+            let gx = grip.x == -1 ? hole.minX : grip.x == 1 ? hole.maxX : hole.midX
+            let gy = grip.y == -1 ? hole.minY : grip.y == 1 ? hole.maxY : hole.midY
+            grip.window.setFrameOrigin(CGPoint(x: screen.frame.minX + gx - half,
+                                               y: screen.frame.minY + gy - half))
+        }
     }
 
     private func finish(screen: NSScreen, rect: CGRect?) {
@@ -202,24 +299,24 @@ private final class HighlightView: NSView {
     }
 }
 
-/// The small pill that drags the chosen area to another place.
-private final class MoveHandleView: NSView {
+/// A view that reports a drag as the distance from where it began.
+private class DragView: NSView {
     var onBegin: (() -> Void)?
     var onDrag: ((CGSize) -> Void)?
     var onEnd: (() -> Void)?
+    var cursor: NSCursor = .openHand
 
     private var startMouse: CGPoint?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: startMouse == nil ? .openHand : .closedHand)
+        addCursorRect(bounds, cursor: cursor)
     }
 
     override func mouseDown(with event: NSEvent) {
         startMouse = NSEvent.mouseLocation
         onBegin?()
-        NSCursor.closedHand.push()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -231,10 +328,25 @@ private final class MoveHandleView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard startMouse != nil else { return }
         startMouse = nil
-        NSCursor.pop()
         onEnd?()
     }
+}
 
+/// A square on the border of the chosen area that resizes it.
+private final class ResizeGripView: DragView {
+    override func draw(_ dirtyRect: NSRect) {
+        let square = bounds.insetBy(dx: 3, dy: 3)
+        NSColor.white.setFill()
+        square.fill()
+        NSColor.systemRed.setStroke()
+        let border = NSBezierPath(rect: square)
+        border.lineWidth = 2
+        border.stroke()
+    }
+}
+
+/// The small pill that drags the chosen area to another place.
+private final class MoveHandleView: DragView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.8).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2,
