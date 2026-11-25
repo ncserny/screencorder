@@ -42,6 +42,9 @@ what only Nader can answer goes into the pull request as a question. It leaves
 
 What the next run should take first, before everything below.
 
+- [ ] [pr] Create a landing page for Screencorder on nader.io with a free download link. Added 2026-11-25. <!-- id: create-landing-page-screencorder-nader -->
+      Create a good-looking landing page that presents Screencorder. Users should be able to download it for free. The page should be hosted as a project page on nader.io.
+
 ## Found by the agent
 
 Gaps an agent noticed on its own. Nader moves an item up into his own
